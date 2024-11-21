@@ -11,7 +11,7 @@
       "name": "Next.js: debug client-side",
       "type": "chrome",
       "request": "launch",
-      "url": "https://ezskin.vercel.app/"
+      "url": "https://juicyskins-back.vercel.app/"
     },
     {
       "name": "Next.js: debug full stack",
