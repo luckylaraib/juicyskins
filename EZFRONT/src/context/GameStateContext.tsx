@@ -34,7 +34,7 @@ export const GameStateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
 
   const SOCKET_SERVER_URL =
-    process.env.NEXT_PUBLIC_SOCKET_SERVER_URL || 'http://localhost:5000';
+    process.env.NEXT_PUBLIC_SOCKET_SERVER_URL || 'http://p4cskkccw00k484o4cwgo4k8.89.117.36.169.sslip.io';
 
   useEffect(() => {
     const socket: Socket = io(SOCKET_SERVER_URL);
