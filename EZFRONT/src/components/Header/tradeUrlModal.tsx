@@ -27,7 +27,7 @@ export default function TradeURLModalComponent({
 }: TradeURLModalComponentProps) {
   const [tradeURL, setTradeURL] = React.useState("");
   const SOCKET_SERVER_URL =
-  process.env.NEXT_PUBLIC_SOCKET_SERVER_URL || "http://p4cskkccw00k484o4cwgo4k8.89.117.36.169.sslip.io";
+  process.env.NEXT_PUBLIC_SOCKET_SERVER_URL || "https://api.juicyskins.com";
 
   const handleModalContentClick = (event: React.MouseEvent) => {
     event.stopPropagation();

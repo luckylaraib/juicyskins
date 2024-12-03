@@ -44,7 +44,7 @@
 
 //     // Replace with your actual Socket.IO server URL or use environment variables
 //     const socketURL =
-//       process.env.NEXT_PUBLIC_SOCKET_URL || "http://p4cskkccw00k484o4cwgo4k8.89.117.36.169.sslip.io/chat";
+//       process.env.NEXT_PUBLIC_SOCKET_URL || "https://api.juicyskins.com/chat";
 //     socket.current = io(socketURL);
 
 //     // Listen for initial messages
@@ -181,7 +181,7 @@ const Chat: React.FC<ChatProps> = ({ isOpen }) => {
 
     // Replace with your actual Socket.IO server URL or use environment variables
     const socketURL =
-      process.env.NEXT_PUBLIC_SOCKET_URL || "http://p4cskkccw00k484o4cwgo4k8.89.117.36.169.sslip.io/chat";
+      process.env.NEXT_PUBLIC_SOCKET_URL || "https://api.juicyskins.com/chat";
     socket.current = io(socketURL);
 
     // Listen for initial messages

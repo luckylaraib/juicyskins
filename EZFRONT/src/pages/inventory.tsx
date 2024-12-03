@@ -29,7 +29,7 @@ const InventoryPage: React.FC<{
   const [token, setToken] = useState<string | null>(null);
 
   const SOCKET_SERVER_URL =
-    process.env.NEXT_PUBLIC_SOCKET_SERVER_URL || "http://p4cskkccw00k484o4cwgo4k8.89.117.36.169.sslip.io";
+    process.env.NEXT_PUBLIC_SOCKET_SERVER_URL || "https://api.juicyskins.com";
 
 
   // Maximum number of items that can be selected

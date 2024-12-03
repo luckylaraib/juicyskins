@@ -45,7 +45,7 @@ const Tooltip: React.FC<{ content: React.ReactNode; children: React.ReactNode }>
 
 const SOCKET_SERVER_URL =
   process.env.NEXT_PUBLIC_SOCKET_SERVER_URL ||
-  "http://p4cskkccw00k484o4cwgo4k8.89.117.36.169.sslip.io";
+  "https://api.juicyskins.com";
 
 // Fetch function for the last four jackpots
 const fetchLastFourJackpots = async (): Promise<Jackpot[]> => {
