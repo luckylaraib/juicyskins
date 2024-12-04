@@ -36,7 +36,7 @@ const getInventory = async (appid, steamid, contextid = 2, tradeable = false) =>
     // Check if the cache is valid
     if (!marketPriceCache || Date.now() - lastCacheTime > CACHE_DURATION) {
       console.log("Fetching prices from the market API...");
-      const marketApiUrl = 'http://localhost:6000/items'; // Replace with your API endpoint
+      const marketApiUrl = 'https://ez-skin-trade-jj29.vercel.app/items'; // Replace with your API endpoint
       const marketApiResponse = await axios.get(marketApiUrl);
       marketPriceCache = marketApiResponse.data;
       lastCacheTime = Date.now();
