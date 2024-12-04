@@ -1,10 +1,11 @@
 // scraper.js
 const puppeteer = require('puppeteer');
 const Item = require('./models/Item');
+require('dotenv').config();
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const scrapeRustMarket = async (maxPages = 436) => {
+const maxPages = process.env.MAX_PAGES || 436;
+const scrapeRustMarket = async () => {
   const baseUrl = 'https://steamcommunity.com/market/search';
   let pageNumber = 1;
 

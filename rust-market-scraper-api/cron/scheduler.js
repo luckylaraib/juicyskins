@@ -15,7 +15,7 @@ const scheduleScraping = () => {
   });
 
   // Optionally, run the scraper immediately when the server starts
-  // scrapeRustMarket();
+  scrapeRustMarket();
 };
 
 module.exports = { scheduleScraping };
