@@ -1,0 +1,18 @@
+{
+  "name": "rust-market-scraper-api",
+  "version": "1.0.0",
+  "description": "An API to scrape Rust Market items and update prices every 15 days using MongoDB.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "Your Name",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "mongoose": "^7.5.0",
+    "node-cron": "^3.0.2",
+    "puppeteer": "^20.8.0"
+  }
+}

@@ -10,10 +10,8 @@ const cookieParser = require('cookie-parser');
 // const Message = require('./models/messageSchema'); // Removed
 const mongoose = require('mongoose');
 const User = require('./models/userSchema');
-const { getInventory } = require('./utils/getInventory');
 const jackpotRoutes = require('./routes/jackpotRoutes');
 const apiRoutes = require('./routes/apiRoutes'); // Import the new apiRoutes
-const isAuth = require('./middleware/isAuth');
 const { generateToken } = require('./utils/genertaetoken');
 
 // Initialize the app

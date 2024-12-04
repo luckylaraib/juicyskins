@@ -20,209 +20,119 @@ router.get('/user', isAuth, async (req, res) => {
 
 
 
-router.get('/inventory', isAuth, async (req, res) => {
-  console.log(req.user.id);
-  try {
-    const steamID64 = req.user.id;
-    const appId = 252490;
-    const contextId = 2;
+// router.js (or the file where your routes are defined)
 
-    if (!steamID64) {
-      return res.status(400).json({ error: 'Missing SteamID64 parameter.' });
-    }
-
-    // Fetch the inventory from Steam
-    const inventory = await getInventory(appId, steamID64, contextId);
-    if (!inventory || !inventory.items || inventory.items.length === 0) {
-      return res.status(404).json({ error: 'No inventory found.' });
-    }
-
-    // Find the user in the database
-    const user = await User.findOne({ steamId: steamID64 });
-    if (!user) {
-      return res.status(404).json({ error: 'User not found.' });
-    }
-
-    // Collect assetIds from Steam inventory
-    const steamAssetIds = new Set(
-      inventory.items.flatMap(item => item.assetIds)
-    );
-
-    // Fetch all items in the database for this user
-    const dbItems = await Item.find({ owner: user._id, appId, contextId });
-
-    // Create a Set of assetIds in the database
-    const dbAssetIds = new Set(dbItems.map(item => item.assetId));
-
-    // Determine assetIds to remove (in db but not in Steam)
-    const assetIdsToRemove = [...dbAssetIds].filter(
-      assetId => !steamAssetIds.has(assetId)
-    );
-
-    // Remove items from Item collection
-    if (assetIdsToRemove.length > 0) {
-      await Item.deleteMany({
-        owner: user._id,
-        assetId: { $in: assetIdsToRemove },
+  router.get('/inventory', isAuth, async (req, res) => {
+    console.log(req.user.id);
+    try {
+      const steamID64 = req.user.id;
+      const appId = 252490;
+      const contextId = 2;
+  
+      if (!steamID64) {
+        return res.status(400).json({ error: 'Missing SteamID64 parameter.' });
+      }
+  
+      // Fetch the inventory from Steam
+      const inventory = await getInventory(appId, steamID64, contextId);
+      if (!inventory || !inventory.items || inventory.items.length === 0) {
+        return res.status(404).json({ error: 'No inventory found.' });
+      }
+  
+      // Find the user in the database and populate the current inventory
+      const user = await User.findOne({ steamId: steamID64 }).populate('inventory');
+      if (!user) {
+        return res.status(404).json({ error: 'User not found.' });
+      }
+  
+      // Gather all assetIds from the Steam inventory
+      const steamAssetIds = inventory.items.flatMap(item => item.assetIds);
+  
+      // Map current inventory items by assetId for quick lookup
+      const currentInventoryItems = {};
+      user.inventory.forEach(item => {
+        currentInventoryItems[item.assetId] = item;
       });
-    }
 
-    // Remove items from user's inventory
-    user.inventory = user.inventory.filter(itemId => {
-      const item = dbItems.find(dbItem => dbItem._id.equals(itemId));
-      return item && steamAssetIds.has(item.assetId);
-    });
-
-    // Determine new assetIds (in Steam but not in db)
-    const newAssetIds = [...steamAssetIds].filter(
-      assetId => !dbAssetIds.has(assetId)
-    );
-
-    // Prepare new items to insert
-    const newItems = [];
-
-    // Process each inventory item
-    inventory.items.forEach(item => {
-      // Extract the numeric part from the price string
-      const priceString = item.price;
-      const priceMatch = priceString.match(/\d+(\.\d+)?/);
-      const price = priceMatch ? parseFloat(priceMatch[0]) : 0;
-
-      // For each assetId in item.assetIds
-      item.assetIds.forEach(assetId => {
-        if (newAssetIds.includes(assetId)) {
-          const newItem = {
-            name: item.market_hash_name,
-            iconUrl: item.icon_url,
-            price: `${price} USD`, // Save the numeric value
-            owner: user._id,
-            assetId,
-            appId,
-            contextId,
-          };
-          newItems.push(newItem);
+      
+  
+      // Determine which assetIds to remove (items no longer in Steam inventory)
+      const assetIdsToRemove = [];
+      for (const assetId in currentInventoryItems) {
+        if (!steamAssetIds.includes(assetId)) {
+          assetIdsToRemove.push(assetId);
         }
+      }
+  
+      // Remove items that are no longer in the Steam inventory from user's inventory
+      if (assetIdsToRemove.length > 0) {
+        // Update the user's inventory by removing items not in Steam inventory
+        user.inventory = user.inventory.filter(item => !assetIdsToRemove.includes(item.assetId));
+        await user.save();
+        
+        
+  
+        // Update the items in the Item collection to disassociate them from the user
+        await Item.updateMany(
+          { assetId: { $in: assetIdsToRemove }, owner: user._id },
+          { $set: { owner: null } } // Or set an 'isActive' flag to false if preferred
+        );
+      }
+  
+      // Determine new assetIds to add (items in Steam inventory but not in current inventory)
+      const newAssetIds = steamAssetIds.filter(assetId => !(assetId in currentInventoryItems));
+  
+      // Prepare new items to insert
+      const newItems = [];
+      const newInventoryItemIds = [];
+  
+      // Process each inventory item from Steam
+      inventory.items.forEach(item => {
+        // Extract the numeric part from the price string
+        const priceString = item.price;
+        const priceMatch = priceString.match(/\d+(\.\d+)?/);
+        const price = priceMatch ? parseFloat(priceMatch[0]) : 0;
+  
+        // For each assetId, check if it is new
+        item.assetIds.forEach(assetId => {
+          if (newAssetIds.includes(assetId)) {
+            // Prepare new item
+            const newItem = new Item({
+              name: item.market_hash_name,
+              iconUrl: item.icon_url,
+              price: `${price} USD`, // Save the numeric value
+              owner: user._id,
+              assetId,
+              appId,
+              contextId
+            });
+            newItems.push(newItem);
+          }
+        });
       });
-    });
-
-    // Bulk insert new items and update user's inventory
-    if (newItems.length > 0) {
-      const insertedItems = await Item.insertMany(newItems);
-      user.inventory.push(...insertedItems.map(item => item._id));
+  
+      // Insert new items into the Item collection and update user's inventory
+      if (newItems.length > 0) {
+        const insertedItems = await Item.insertMany(newItems);
+        const insertedItemIds = insertedItems.map(item => item._id);
+  
+        // Add new items to the user's inventory
+        user.inventory.push(...insertedItemIds);
+        await user.save();
+      }
+      console.log("user inventory2",user.inventory);
+      
+      // Return the updated user's inventory
+      const updatedUser = await User.findOne({ steamId: steamID64 }).populate('inventory');
+      res.json({ items: updatedUser.inventory });
+  
+    } catch (error) {
+      console.error("Error in /api/inventory:", error);
+      res.status(500).json({ error: error.message });
     }
+  });
+  
 
-    // Save user after updating inventory
-    await user.save();
-
-    // Return the updated user's inventory
-    const userInventory = await User.findOne({ steamId: steamID64 }).populate(
-      'inventory'
-    );
-    res.json({ items: userInventory.inventory });
-  } catch (error) {
-    console.error('Error in /api/inventory:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-//remove item from user inventory but not remove it from items
-// router.get('/inventory', isAuth, async (req, res) => {
-//   console.log(req.user.id);
-//   try {
-//     const steamID64 = req.user.id;
-//     const appId = 252490;
-//     const contextId = 2;
-
-//     if (!steamID64) {
-//       return res.status(400).json({ error: 'Missing SteamID64 parameter.' });
-//     }
-
-//     // Fetch the inventory from Steam
-//     const inventory = await getInventory(appId, steamID64, contextId);
-//     if (!inventory || !inventory.items || inventory.items.length === 0) {
-//       return res.status(404).json({ error: 'No inventory found.' });
-//     }
-
-//     // Find the user in the database and populate the inventory
-//     const user = await User.findOne({ steamId: steamID64 }).populate('inventory');
-//     if (!user) {
-//       return res.status(404).json({ error: 'User not found.' });
-//     }
-
-//     // Collect assetIds from Steam inventory
-//     const steamAssetIds = new Set(
-//       inventory.items.flatMap(item => item.assetIds)
-//     );
-
-//     // Fetch all items in the database for this user
-//     const dbItems = await Item.find({ owner: user._id, appId, contextId });
-
-//     // Create a Map of assetId to Item
-//     const dbItemsMap = new Map(dbItems.map(item => [item.assetId, item]));
-
-//     // Determine assetIds to remove (in db but not in Steam)
-//     const assetIdsToRemove = [...dbItemsMap.keys()].filter(
-//       assetId => !steamAssetIds.has(assetId)
-//     );
-
-//     // Remove items from user's inventory
-//     user.inventory = user.inventory.filter(item => {
-//       // Ensure item is populated
-//       const itemAssetId = item.assetId || (await Item.findById(item)).assetId;
-//       return steamAssetIds.has(itemAssetId);
-//     });
-
-//     // Determine new assetIds (in Steam but not in db)
-//     const newAssetIds = [...steamAssetIds].filter(
-//       assetId => !dbItemsMap.has(assetId)
-//     );
-
-//     // Prepare new items to insert
-//     const newItems = [];
-
-//     // Process each inventory item
-//     inventory.items.forEach(item => {
-//       // Extract the numeric part from the price string
-//       const priceString = item.price;
-//       const priceMatch = priceString.match(/\d+(\.\d+)?/);
-//       const price = priceMatch ? parseFloat(priceMatch[0]) : 0;
-
-//       // For each assetId in item.assetIds
-//       item.assetIds.forEach(assetId => {
-//         if (newAssetIds.includes(assetId)) {
-//           const newItem = {
-//             name: item.market_hash_name,
-//             iconUrl: item.icon_url,
-//             price: `${price} USD`, // Save the numeric value
-//             owner: user._id,
-//             assetId,
-//             appId,
-//             contextId,
-//           };
-//           newItems.push(newItem);
-//         }
-//       });
-//     });
-
-//     // Bulk insert new items and update user's inventory
-//     if (newItems.length > 0) {
-//       const insertedItems = await Item.insertMany(newItems);
-//       user.inventory.push(...insertedItems.map(item => item._id));
-//     }
-
-//     // Save user after updating inventory
-//     await user.save();
-
-//     // Return the updated user's inventory
-//     const userInventory = await User.findOne({ steamId: steamID64 }).populate(
-//       'inventory'
-//     );
-//     res.json({ items: userInventory.inventory });
-//   } catch (error) {
-//     console.error('Error in /api/inventory:', error);
-//     res.status(500).json({ error: error.message });
-//   }
-// });
 
 // Protected inventory route
 // router.get('/inventory', isAuth, async (req, res) => {
