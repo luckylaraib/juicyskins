@@ -3,6 +3,22 @@ const SteamCommunity = require('steamcommunity');
 const SteamTradeManager = require('steam-tradeoffer-manager');
 const SteamTotp = require('steam-totp');
 const fs = require('fs');
+const winston = require('winston');
+
+// Configure Winston logger
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.printf(({ timestamp, level, message }) => {
+      return `${timestamp} [${level.toUpperCase()}]: ${message}`;
+    })
+  ),
+  transports: [
+    new winston.transports.Console(),
+    new winston.transports.File({ filename: 'bot.log' })
+  ],
+});
 
 const client = new SteamUser();
 const community = new SteamCommunity();
@@ -10,7 +26,7 @@ const manager = new SteamTradeManager({
   steam: client,
   community: community,
   language: 'en',
-  useAccessToken: true,
+  useAccessToken: true
 });
 
 // Steam bot credentials from environment variables
@@ -18,98 +34,111 @@ const config = {
   accountName: process.env.STEAM_ACCOUNT_NAME,
   password: process.env.STEAM_PASSWORD,
   sharedSecret: process.env.STEAM_SHARED_SECRET,
-  identitySecret: process.env.STEAM_IDENTITY_SECRET,
+  identitySecret: process.env.STEAM_IDENTITY_SECRET
 };
+
+// Avoid logging sensitive information
+logger.info('Config: Account Name is set.');
 
 // Validate Steam credentials
 if (!config.accountName || !config.password || !config.sharedSecret || !config.identitySecret) {
-  console.error('Steam credentials are not fully set in environment variables.');
+  logger.error('Steam credentials are not fully set in environment variables.');
   process.exit(1);
 }
 
-let isLoggedIn = false; // Track the bot's login state
-let retryDelay = 5000; // Initial retry delay for login
+// Handle uncaught exceptions and unhandled rejections
+process.on('uncaughtException', (err) => {
+  logger.error(`Uncaught Exception: ${err}`);
+  // Optionally, restart or perform other actions
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error(`Unhandled Rejection at: ${promise} reason: ${reason}`);
+  // Optionally, restart or perform other actions
+});
+
+let loginAttempts = 0;
+const MAX_LOGIN_ATTEMPTS = 10;
 
 // Function to log in to Steam
 function loginToSteam() {
-  if (isLoggedIn) return; // Prevent duplicate login attempts
-  console.log(`[${new Date().toISOString()}] Attempting to log in to Steam...`);
-  try {
-    client.logOn({
-      accountName: config.accountName,
-      password: config.password,
-      twoFactorCode: SteamTotp.generateAuthCode(config.sharedSecret),
-    });
-  } catch (err) {
-    console.error(`[${new Date().toISOString()}] Login failed:`, err);
-    retryDelay = Math.min(retryDelay * 2, 60000); // Exponential backoff capped at 60 seconds
-    setTimeout(loginToSteam, retryDelay);
+  if (loginAttempts >= MAX_LOGIN_ATTEMPTS) {
+    logger.error('Max login attempts reached. Exiting...');
+    process.exit(1);
   }
+
+  logger.info(`Attempting to log in to Steam (Attempt ${loginAttempts + 1})...`);
+  client.logOn({
+    accountName: config.accountName,
+    password: config.password,
+    twoFactorCode: SteamTotp.generateAuthCode(config.sharedSecret)
+  });
+
+  loginAttempts += 1;
 }
 
 // Log in to Steam initially
 loginToSteam();
 
-// Event: Successfully logged in
+// Steam client event handlers
 client.on('loggedOn', () => {
-  isLoggedIn = true;
-  retryDelay = 5000; // Reset retry delay on successful login
-  console.log(`[${new Date().toISOString()}] Successfully logged in to Steam.`);
+  loginAttempts = 0; // Reset on successful login
   client.setPersona(SteamUser.EPersonaState.Online);
   client.gamesPlayed([252490]); // Example game ID
+  logger.info('Steam client logged in and online');
 });
 
-// Event: Error handling
 client.on('error', (err) => {
-  isLoggedIn = false;
-  console.error(`[${new Date().toISOString()}] Steam client encountered an error:`, err);
-
-  if (err.eresult === SteamUser.EResult.LoggedOff || err.eresult === SteamUser.EResult.NoConnection) {
-    retryDelay = Math.min(retryDelay * 2, 60000); // Increment retry delay
-    console.log(`[${new Date().toISOString()}] Attempting to re-login in ${retryDelay / 1000} seconds...`);
-    setTimeout(loginToSteam, retryDelay);
+  logger.error(`Steam client encountered an error: ${err}`);
+  if ([SteamUser.EResult.NotLoggedOn, SteamUser.EResult.NoConnection].includes(err.eresult)) {
+    logger.info('Attempting to reconnect in 5 seconds...');
+    setTimeout(loginToSteam, 2000); // Try re-logging in after 5 seconds
+  } else {
+    // Handle other errors or decide to exit
+    // process.exit(1); // Uncomment if you want to terminate on certain errors
   }
 });
 
-// Event: Disconnected
 client.on('disconnected', (eresult, msg) => {
-  isLoggedIn = false;
-  console.warn(`[${new Date().toISOString()}] Disconnected from Steam (${eresult}): ${msg}`);
-  retryDelay = Math.min(retryDelay * 2, 60000); // Increment retry delay
-  console.log(`[${new Date().toISOString()}] Attempting to re-login in ${retryDelay / 1000} seconds...`);
-  setTimeout(loginToSteam, retryDelay);
+  logger.warn(`Disconnected from Steam (${eresult}): ${msg}. Attempting to relog.`);
+  setTimeout(loginToSteam, 5000); // Attempt re-login after 5 seconds
 });
 
-// Event: Web session established
+client.on('loggedOff', (eresult) => {
+  logger.warn(`Logged off from Steam (${eresult}). Attempting to relog.`);
+  setTimeout(loginToSteam, 5000); // Attempt re-login after 5 seconds
+});
+
 client.on('webSession', (sessionId, cookies) => {
-  console.log(`[${new Date().toISOString()}] Web session established.`);
-  isLoggedIn = true; // Ensure the bot remains logged in
-  try {
-    manager.setCookies(cookies);
-    community.setCookies(cookies);
-    community.startConfirmationChecker(20000, config.identitySecret);
-  } catch (err) {
-    console.error(`[${new Date().toISOString()}] Error setting cookies:`, err);
-  }
+  logger.info('Web session established.');
+  manager.setCookies(cookies);
+  community.setCookies(cookies);
+  community.startConfirmationChecker(20000, config.identitySecret);
 });
 
-// Periodic Heartbeat to Check Connection
+// Heartbeat to monitor connection status
+const HEARTBEAT_INTERVAL = 60000; // 60 seconds
+
 setInterval(() => {
-  if (!isLoggedIn) {
-    console.warn(`[${new Date().toISOString()}] Bot is not logged in. Attempting to re-login...`);
+  if (!client.steamID || client.steamID.getSteamID64() === '0') {
+    logger.warn('Bot is not logged in. Attempting to reconnect...');
     loginToSteam();
   } else {
-    console.log(`[${new Date().toISOString()}] Bot is logged in and active.`);
+    logger.info('Heartbeat: Bot is online.');
   }
-}, 60000); // Check every 60 seconds
+}, HEARTBEAT_INTERVAL);
 
-// Global Error Handlers
-process.on('uncaughtException', (err) => {
-  console.error(`[${new Date().toISOString()}] Uncaught Exception:`, err);
+// Optional: Graceful shutdown handling
+process.on('SIGINT', () => {
+  logger.info('Received SIGINT. Shutting down gracefully...');
+  client.logOff();
+  process.exit(0);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error(`[${new Date().toISOString()}] Unhandled Rejection:`, reason);
+process.on('SIGTERM', () => {
+  logger.info('Received SIGTERM. Shutting down gracefully...');
+  client.logOff();
+  process.exit(0);
 });
 
 module.exports = { manager };
